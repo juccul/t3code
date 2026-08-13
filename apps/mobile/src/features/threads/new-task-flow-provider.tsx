@@ -51,7 +51,7 @@ import {
   updateComposerDraftSettings,
   useComposerDraft,
 } from "../../state/use-composer-drafts";
-import { useBranches } from "../../state/queries";
+import { useDebouncedValue, usePaginatedBranches } from "../../state/queries";
 import {
   flattenQueuedThreadMessages,
   threadOutboxManager,
@@ -84,7 +84,7 @@ import {
 
 type WorkspaceMode = "local" | "worktree";
 
-const EMPTY_BRANCH_REFS: ReadonlyArray<VcsRef> = [];
+const BRANCH_SEARCH_DEBOUNCE_MS = 150;
 
 function pendingTaskDraftKey(messageId: string): string {
   return `pending-task:${messageId}`;
@@ -138,6 +138,8 @@ type NewTaskFlowContextValue = {
   readonly submitting: boolean;
   readonly branchQuery: string;
   readonly branchesLoading: boolean;
+  readonly branchesFetchingNextPage: boolean;
+  readonly hasMoreBranches: boolean;
   readonly availableBranches: ReadonlyArray<VcsRef>;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
@@ -176,6 +178,7 @@ type NewTaskFlowContextValue = {
   readonly setSubmitting: (value: boolean) => void;
   readonly setBranchQuery: (value: string) => void;
   readonly loadBranches: () => Promise<void>;
+  readonly loadMoreBranches: () => void;
   readonly setRuntimeMode: (value: RuntimeMode) => void;
   readonly setInteractionMode: (value: ProviderInteractionMode) => void;
   readonly setSelectedModelOptions: (
@@ -526,18 +529,25 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     }
     replaceComposerDraftAttachments(selectedProjectDraftKey, []);
   }, [selectedProjectDraftKey]);
+  const debouncedBranchQuery = useDebouncedValue(branchQuery, BRANCH_SEARCH_DEBOUNCE_MS);
   const branchTarget = useMemo(
     () => ({
       environmentId: selectedProject?.environmentId ?? null,
       // `|| null` also skips the stand-in project's empty workspaceRoot.
       cwd: selectedProject?.workspaceRoot || null,
-      query: null,
+      query: debouncedBranchQuery,
+      refKind: "local" as const,
     }),
-    [selectedProject?.environmentId, selectedProject?.workspaceRoot],
+    [debouncedBranchQuery, selectedProject?.environmentId, selectedProject?.workspaceRoot],
   );
-  const branchState = useBranches(branchTarget);
-  const branchesLoading = branchState.isPending;
-  const allBranchRefs = branchState.data?.refs ?? EMPTY_BRANCH_REFS;
+  const branchState = usePaginatedBranches(branchTarget);
+  const branchSearchIsDebouncing = branchQuery.trim() !== debouncedBranchQuery.trim();
+  const branchesLoading =
+    branchSearchIsDebouncing || (branchState.isPending && branchState.data === null);
+  const branchesFetchingNextPage = branchState.isFetchingNextPage;
+  const hasMoreBranches =
+    branchState.data?.nextCursor !== null && branchState.data?.nextCursor !== undefined;
+  const allBranchRefs = branchState.refs;
   const availableBranches = useMemo(
     () =>
       pipe(
@@ -716,6 +726,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   );
 
   const refreshBranches = branchState.refresh;
+  const loadMoreBranches = branchState.loadNext;
   const loadBranches = useCallback(async () => {
     if (!selectedProject) {
       return;
@@ -984,6 +995,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       submitting,
       branchQuery,
       branchesLoading,
+      branchesFetchingNextPage,
+      hasMoreBranches,
       availableBranches,
       runtimeMode,
       interactionMode,
@@ -1016,6 +1029,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       setSubmitting,
       setBranchQuery,
       loadBranches,
+      loadMoreBranches,
       setRuntimeMode,
       setInteractionMode,
       setSelectedModelOptions,
@@ -1027,6 +1041,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       beginEditingPendingTask,
       branchQuery,
       branchesLoading,
+      branchesFetchingNextPage,
       buildPendingTaskMessage,
       cancelEditingPendingTask,
       editingPendingTask,
@@ -1037,6 +1052,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       interactionMode,
       planModeEnabled,
       loadBranches,
+      loadMoreBranches,
       projectScopes,
       modelOptions,
       prompt,
@@ -1045,6 +1061,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       reset,
       runtimeMode,
       selectedBranchName,
+      hasMoreBranches,
       selectedEnvironmentId,
       selectedModel,
       selectedModelKey,

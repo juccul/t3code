@@ -1,15 +1,15 @@
 import type { VcsRef } from "@t3tools/client-runtime/state/vcs";
+import { LegendList } from "@legendapp/list/react-native";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Haptics from "expo-haptics";
 import { useNavigation } from "@react-navigation/native";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Platform,
   Pressable,
   ScrollView,
@@ -89,22 +89,14 @@ function SelectionRow(props: {
 
 function ToggleRow(props: {
   readonly title: string;
-  readonly subtitle?: string;
   readonly value: boolean;
   readonly onValueChange: (value: boolean) => void;
 }) {
   return (
     <View className="min-h-14 flex-row items-center gap-3 bg-card px-4 py-3">
-      <View className="min-w-0 flex-1 gap-0.5">
-        <Text className="text-base font-t3-medium text-foreground" numberOfLines={1}>
-          {props.title}
-        </Text>
-        {props.subtitle ? (
-          <Text className="text-xs text-foreground-muted" numberOfLines={1}>
-            {props.subtitle}
-          </Text>
-        ) : null}
-      </View>
+      <Text className="min-w-0 flex-1 text-base font-t3-medium text-foreground" numberOfLines={1}>
+        {props.title}
+      </Text>
       <Switch
         accessibilityLabel={props.title}
         onValueChange={props.onValueChange}
@@ -214,6 +206,18 @@ export function NewTaskBranchPickerRouteScreen() {
     flow.availableBranches.find((branch) => branch.current)?.name ??
     flow.availableBranches.find((branch) => branch.isDefault)?.name ??
     null;
+  const branchListContentStyle = useMemo(
+    () => ({
+      paddingBottom: usesNativeMailSearchToolbar
+        ? NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET + 16
+        : Platform.OS === "ios"
+          ? 16
+          : Math.max(insets.bottom, 16) + 16,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+    }),
+    [insets.bottom, usesNativeMailSearchToolbar],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -324,47 +328,35 @@ export function NewTaskBranchPickerRouteScreen() {
     ],
   );
 
-  const branchList = (
-    <FlatList
-      automaticallyAdjustsScrollIndicatorInsets
-      automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
-      className="flex-1 bg-sheet"
-      contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={{
-        flexGrow: flow.filteredBranches.length === 0 ? 1 : undefined,
-        paddingBottom: usesNativeMailSearchToolbar
-          ? NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET + 16
-          : Platform.OS === "ios"
-            ? 16
-            : Math.max(insets.bottom, 16) + 16,
-        paddingHorizontal: 16,
-        paddingTop: 12,
-      }}
-      data={flow.filteredBranches}
-      keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-      keyboardShouldPersistTaps="handled"
-      keyExtractor={(branch) =>
-        `${branch.remoteName ?? "local"}:${branch.name}:${branch.worktreePath ?? ""}`
-      }
-      ListHeaderComponent={
-        flow.workspaceMode === "worktree" ? (
-          <View className="mb-3 overflow-hidden rounded-2xl">
-            <ToggleRow
-              onValueChange={flow.setStartFromOrigin}
-              subtitle={
-                selectedBranchName
-                  ? `Start from origin/${selectedBranchName}`
-                  : "Start from the latest remote branch"
-              }
-              title="Latest origin"
-              value={flow.startFromOrigin}
-            />
-          </View>
-        ) : null
-      }
-      renderItem={renderBranch}
-      ListEmptyComponent={
-        <View className="flex-1 items-center justify-center gap-3 px-8 py-16">
+  const branchListHeader =
+    flow.workspaceMode === "worktree" ? (
+      <View className="mb-3 overflow-hidden rounded-2xl">
+        <ToggleRow
+          onValueChange={flow.setStartFromOrigin}
+          title="Start from origin"
+          value={flow.startFromOrigin}
+        />
+      </View>
+    ) : null;
+
+  const branchContent =
+    flow.filteredBranches.length === 0 ? (
+      <ScrollView
+        className="flex-1 bg-sheet"
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingTop: 12 }}
+        scrollEnabled={false}
+        showsVerticalScrollIndicator={false}
+      >
+        {branchListHeader}
+        <View
+          className="flex-1 items-center justify-center gap-3 px-4"
+          style={{
+            marginBottom: usesNativeMailSearchToolbar
+              ? NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET
+              : 0,
+          }}
+        >
           {flow.branchesLoading ? <ActivityIndicator /> : null}
           <Text className="text-center text-sm text-foreground-muted">
             {flow.branchesLoading
@@ -374,10 +366,35 @@ export function NewTaskBranchPickerRouteScreen() {
                 : "No branches available"}
           </Text>
         </View>
-      }
-      showsVerticalScrollIndicator={false}
-    />
-  );
+      </ScrollView>
+    ) : (
+      <LegendList
+        alwaysBounceVertical={false}
+        automaticallyAdjustsScrollIndicatorInsets
+        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+        className="flex-1 bg-sheet"
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={branchListContentStyle}
+        data={flow.filteredBranches}
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        keyboardShouldPersistTaps="handled"
+        keyExtractor={(branch) =>
+          `${branch.remoteName ?? "local"}:${branch.name}:${branch.worktreePath ?? ""}`
+        }
+        ListHeaderComponent={branchListHeader}
+        ListFooterComponent={
+          flow.branchesFetchingNextPage ? (
+            <View className="items-center py-4">
+              <ActivityIndicator />
+            </View>
+          ) : null
+        }
+        onEndReached={flow.hasMoreBranches ? flow.loadMoreBranches : undefined}
+        onEndReachedThreshold={0.35}
+        renderItem={renderBranch}
+        showsVerticalScrollIndicator={false}
+      />
+    );
 
   if (Platform.OS === "android") {
     return (
@@ -396,7 +413,7 @@ export function NewTaskBranchPickerRouteScreen() {
             value={flow.branchQuery}
           />
         </View>
-        {branchList}
+        {branchContent}
       </View>
     );
   }
@@ -413,6 +430,7 @@ export function NewTaskBranchPickerRouteScreen() {
                   onSearchTextChange: flow.setBranchQuery,
                   placeholder: "Find a branch",
                   searchTextChangeId: "new-task-branch-search-text",
+                  showsSearchDismissButton: true,
                 }),
               ]
             : undefined,
@@ -438,7 +456,7 @@ export function NewTaskBranchPickerRouteScreen() {
           <NativeHeaderToolbar.SearchBarSlot />
         </NativeHeaderToolbar>
       )}
-      {branchList}
+      {branchContent}
     </>
   );
 }

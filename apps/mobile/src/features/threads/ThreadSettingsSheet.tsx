@@ -345,6 +345,7 @@ type ThreadSettingsSessionValue = {
   readonly showLegacy: boolean;
   readonly applyOptionChange: (id: string, value: string | boolean) => void;
   readonly commitPendingModel: () => void;
+  readonly isApplied: (option: ModelOption) => boolean;
   readonly isDisplayed: (option: ModelOption) => boolean;
   readonly pressModel: (option: ModelOption) => void;
   readonly setProviderFilter: (providerKey: string | null) => void;
@@ -462,6 +463,7 @@ function ThreadSettingsSessionProvider(
       showLegacy: showLegacyToggle,
       applyOptionChange,
       commitPendingModel,
+      isApplied,
       isDisplayed,
       pressModel,
       setProviderFilter,
@@ -475,6 +477,7 @@ function ThreadSettingsSessionProvider(
       displayedDescriptors,
       providerExpansionOverrides,
       hasLegacyModels,
+      isApplied,
       isDisplayed,
       pendingModel,
       pressModel,
@@ -598,11 +601,14 @@ function useThreadSettingsModelSections(
           return [];
         }
         const isPrimary = driver !== undefined && PRIMARY_PROVIDER_DRIVERS.has(driver);
-        const containsSelection = group.models.some(session.isDisplayed);
+        // Staging a model must not change disclosure state. The applied model
+        // stays stable for the lifetime of this picker (Save closes it), so it
+        // is safe to use as the initial selected-provider default.
+        const containsAppliedSelection = group.models.some(session.isApplied);
         const isNarrowed = session.providerFilter !== null || session.searchQuery.trim().length > 0;
         const collapsible = !isNarrowed;
         const collapsed = providerSectionIsCollapsed({
-          defaultExpanded: isPrimary || containsSelection,
+          defaultExpanded: isPrimary || containsAppliedSelection,
           hasExpansionOverride: session.providerExpansionOverrides.has(group.providerKey),
           isNarrowed,
         });
@@ -619,6 +625,7 @@ function useThreadSettingsModelSections(
         ];
       }),
     [
+      session.isApplied,
       session.isDisplayed,
       session.providerExpansionOverrides,
       session.providerFilter,
