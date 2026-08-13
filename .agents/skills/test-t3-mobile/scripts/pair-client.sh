@@ -61,10 +61,11 @@ case "$platform" in
     xcrun simctl openurl "$device_id" "$deep_link"
     ;;
   android)
-    adb -s "$device_id" shell am start -W \
-      -a android.intent.action.VIEW \
-      -d "$deep_link" \
-      com.t3tools.t3code.dev >/dev/null
+    # adb shell re-joins its arguments and evaluates them through the device
+    # shell, so the deep link's `?`/`&` must be quoted once more for that shell.
+    adb -s "$device_id" shell \
+      "am start -W -a android.intent.action.VIEW -d '$deep_link' com.t3tools.t3code.dev" \
+      >/dev/null
     ;;
 esac
 

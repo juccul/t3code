@@ -361,10 +361,21 @@ export function NewTaskBranchPickerRouteScreen() {
           <Text className="text-center text-sm text-foreground-muted">
             {flow.branchesLoading
               ? "Loading branches…"
-              : flow.branchQuery
-                ? "No matching branches"
-                : "No branches available"}
+              : flow.branchesError
+                ? flow.branchesError
+                : flow.branchQuery
+                  ? "No matching branches"
+                  : "No branches available"}
           </Text>
+          {!flow.branchesLoading && flow.branchesError ? (
+            <Pressable
+              accessibilityRole="button"
+              className="rounded-full bg-card px-4 py-2 active:opacity-70"
+              onPress={flow.loadBranches}
+            >
+              <Text className="text-sm font-t3-medium text-foreground">Try again</Text>
+            </Pressable>
+          ) : null}
         </View>
       </ScrollView>
     ) : (

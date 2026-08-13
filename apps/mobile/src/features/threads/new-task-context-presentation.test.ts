@@ -4,8 +4,6 @@ import {
   resolveNewTaskBranchWorktreePath,
   resolveNewTaskBranchLabel,
   resolveNewTaskLocalWorkspaceSelection,
-  resolveNewTaskWorkspaceLabel,
-  shouldCheckoutNewTaskBranch,
 } from "./new-task-context-presentation";
 
 describe("resolveNewTaskLocalWorkspaceSelection", () => {
@@ -34,6 +32,22 @@ describe("resolveNewTaskLocalWorkspaceSelection", () => {
     ).toEqual({
       branch: "main",
       worktreePath: null,
+      awaitsCurrentBranch: false,
+    });
+  });
+
+  it("carries the worktree path when the current branch lives in another worktree", () => {
+    expect(
+      resolveNewTaskLocalWorkspaceSelection({
+        branches: [
+          { name: "feature/split", current: true, worktreePath: "/repo/.t3/worktrees/split" },
+          { name: "main", current: false, worktreePath: "/repo" },
+        ],
+        projectCwd: "/repo",
+      }),
+    ).toEqual({
+      branch: "feature/split",
+      worktreePath: "/repo/.t3/worktrees/split",
       awaitsCurrentBranch: false,
     });
   });
@@ -68,32 +82,6 @@ describe("resolveNewTaskBranchWorktreePath", () => {
         branchWorktreePath: "/repo/.t3/worktrees/feature",
       }),
     ).toBeNull();
-  });
-});
-
-describe("resolveNewTaskWorkspaceLabel", () => {
-  it("labels the project checkout", () => {
-    expect(resolveNewTaskWorkspaceLabel({ workspaceMode: "local", worktreePath: null })).toBe(
-      "Current checkout",
-    );
-  });
-
-  it("labels an existing selected worktree", () => {
-    expect(
-      resolveNewTaskWorkspaceLabel({
-        workspaceMode: "local",
-        worktreePath: "/repo/.t3/worktrees/feature",
-      }),
-    ).toBe("Current worktree");
-  });
-
-  it("keeps creation mode labeled as a new worktree", () => {
-    expect(
-      resolveNewTaskWorkspaceLabel({
-        workspaceMode: "worktree",
-        worktreePath: "/repo/.t3/worktrees/ignored",
-      }),
-    ).toBe("New worktree");
   });
 });
 
@@ -136,37 +124,5 @@ describe("resolveNewTaskBranchLabel", () => {
         workspaceMode: "worktree",
       }),
     ).toBe("Choose branch");
-  });
-});
-
-describe("shouldCheckoutNewTaskBranch", () => {
-  it("switches refs for a different branch in Current checkout", () => {
-    expect(
-      shouldCheckoutNewTaskBranch({
-        branchIsCurrent: false,
-        branchWorktreePath: null,
-        workspaceMode: "local",
-      }),
-    ).toBe(true);
-  });
-
-  it("does not switch refs while choosing a new worktree base", () => {
-    expect(
-      shouldCheckoutNewTaskBranch({
-        branchIsCurrent: false,
-        branchWorktreePath: null,
-        workspaceMode: "worktree",
-      }),
-    ).toBe(false);
-  });
-
-  it("reuses an existing branch checkout without switching it", () => {
-    expect(
-      shouldCheckoutNewTaskBranch({
-        branchIsCurrent: false,
-        branchWorktreePath: "/repo-worktrees/feature",
-        workspaceMode: "local",
-      }),
-    ).toBe(false);
   });
 });

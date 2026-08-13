@@ -379,7 +379,7 @@ export function NewTaskDraftScreen(props: {
       return;
     }
     loadedBranchesProjectKeyRef.current = projectKey;
-    void flow.loadBranches();
+    flow.loadBranches();
   }, [flow.loadBranches, selectedProject]);
 
   useEffect(() => {

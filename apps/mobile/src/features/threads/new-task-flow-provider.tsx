@@ -116,9 +116,6 @@ export function branchBadgeLabel(input: {
   if (input.branch.isDefault) {
     return "default";
   }
-  if (input.branch.isRemote) {
-    return "remote";
-  }
   return null;
 }
 
@@ -138,6 +135,7 @@ type NewTaskFlowContextValue = {
   readonly submitting: boolean;
   readonly branchQuery: string;
   readonly branchesLoading: boolean;
+  readonly branchesError: string | null;
   readonly branchesFetchingNextPage: boolean;
   readonly hasMoreBranches: boolean;
   readonly availableBranches: ReadonlyArray<VcsRef>;
@@ -177,7 +175,7 @@ type NewTaskFlowContextValue = {
   readonly clearAttachments: () => void;
   readonly setSubmitting: (value: boolean) => void;
   readonly setBranchQuery: (value: string) => void;
-  readonly loadBranches: () => Promise<void>;
+  readonly loadBranches: () => void;
   readonly loadMoreBranches: () => void;
   readonly setRuntimeMode: (value: RuntimeMode) => void;
   readonly setInteractionMode: (value: ProviderInteractionMode) => void;
@@ -536,7 +534,6 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       // `|| null` also skips the stand-in project's empty workspaceRoot.
       cwd: selectedProject?.workspaceRoot || null,
       query: debouncedBranchQuery,
-      refKind: "local" as const,
     }),
     [debouncedBranchQuery, selectedProject?.environmentId, selectedProject?.workspaceRoot],
   );
@@ -727,7 +724,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
 
   const refreshBranches = branchState.refresh;
   const loadMoreBranches = branchState.loadNext;
-  const loadBranches = useCallback(async () => {
+  const loadBranches = useCallback(() => {
     if (!selectedProject) {
       return;
     }
@@ -995,6 +992,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       submitting,
       branchQuery,
       branchesLoading,
+      branchesError: branchState.error,
       branchesFetchingNextPage,
       hasMoreBranches,
       availableBranches,
@@ -1041,6 +1039,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       beginEditingPendingTask,
       branchQuery,
       branchesLoading,
+      branchState.error,
       branchesFetchingNextPage,
       buildPendingTaskMessage,
       cancelEditingPendingTask,

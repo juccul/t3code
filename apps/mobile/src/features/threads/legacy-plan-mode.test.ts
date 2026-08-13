@@ -1,21 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import {
-  resolveLegacyPlanModeEnabled,
-  resolvePendingTaskInteractionMode,
-} from "./legacy-plan-mode";
+import { resolvePendingTaskInteractionMode } from "./legacy-plan-mode";
 
-describe("resolveLegacyPlanModeEnabled", () => {
-  it("stays off until the explicit legacy preference has loaded", () => {
-    expect(resolveLegacyPlanModeEnabled({ loaded: false, preference: true })).toBe(false);
-    expect(resolveLegacyPlanModeEnabled({ loaded: true, preference: undefined })).toBe(false);
-    expect(resolveLegacyPlanModeEnabled({ loaded: true, preference: false })).toBe(false);
-  });
-
-  it("enables plan mode only for an explicit loaded opt-in", () => {
-    expect(resolveLegacyPlanModeEnabled({ loaded: true, preference: true })).toBe(true);
-  });
-
+describe("resolvePendingTaskInteractionMode", () => {
   it("preserves a queued plan task while the preference is still loading", () => {
     expect(
       resolvePendingTaskInteractionMode({
@@ -45,6 +32,25 @@ describe("resolveLegacyPlanModeEnabled", () => {
         planModeEnabled: false,
         draftInteractionMode: "plan",
         queuedInteractionMode: undefined,
+      }),
+    ).toBe("default");
+  });
+
+  it("honors the draft's mode when the plan preference is enabled", () => {
+    expect(
+      resolvePendingTaskInteractionMode({
+        preferenceLoaded: true,
+        planModeEnabled: true,
+        draftInteractionMode: "plan",
+        queuedInteractionMode: undefined,
+      }),
+    ).toBe("plan");
+    expect(
+      resolvePendingTaskInteractionMode({
+        preferenceLoaded: true,
+        planModeEnabled: true,
+        draftInteractionMode: undefined,
+        queuedInteractionMode: "plan",
       }),
     ).toBe("default");
   });

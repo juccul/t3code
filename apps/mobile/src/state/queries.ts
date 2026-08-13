@@ -12,6 +12,7 @@ import {
   type EnvironmentThreadSearchMatch,
 } from "@t3tools/client-runtime/state/thread-search";
 import { useAtomValue } from "@effect/atom-react";
+import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -135,15 +136,11 @@ export function useBranches(input: {
   );
 }
 
-type PaginatedBranchesTarget = VcsRefTarget & {
-  readonly refKind?: "all" | "local" | "remote";
-};
-
-export function usePaginatedBranches(target: PaginatedBranchesTarget) {
+export function usePaginatedBranches(target: VcsRefTarget) {
   const query = target.query?.trim() ?? "";
   const targetKey =
     target.environmentId !== null && target.cwd !== null
-      ? JSON.stringify([target.environmentId, target.cwd, query, target.refKind])
+      ? JSON.stringify([target.environmentId, target.cwd, query])
       : null;
   const [pagination, setPagination] = useState<{
     readonly targetKey: string | null;
@@ -162,14 +159,13 @@ export function usePaginatedBranches(target: PaginatedBranchesTarget) {
               input: {
                 cwd: target.cwd!,
                 ...(query.length > 0 ? { query } : {}),
-                ...(target.refKind === undefined ? {} : { refKind: target.refKind }),
                 ...(cursor === undefined ? {} : { cursor }),
                 limit: VCS_REF_LIST_LIMIT,
               },
             }),
           )
         : [],
-    [cursors, query, target.cwd, target.environmentId, target.refKind],
+    [cursors, query, target.cwd, target.environmentId],
   );
   const pagesAtom = useMemo(
     () =>
@@ -206,6 +202,16 @@ export function usePaginatedBranches(target: PaginatedBranchesTarget) {
     results.length > 1 &&
     lastResult?.waiting === true &&
     Option.isNone(AsyncResult.value(lastResult));
+  const failed = results.find((result) => result._tag === "Failure");
+  const error =
+    failed?._tag === "Failure"
+      ? (() => {
+          const cause = Cause.squash(failed.cause);
+          return cause instanceof Error && cause.message.trim().length > 0
+            ? cause.message
+            : "Failed to load refs.";
+        })()
+      : null;
   const refresh = useCallback(() => {
     const firstPage = pageAtoms[0];
     setPagination({ targetKey, cursors: INITIAL_BRANCH_CURSORS });
@@ -229,6 +235,7 @@ export function usePaginatedBranches(target: PaginatedBranchesTarget) {
   return {
     data,
     refs: data?.refs ?? EMPTY_REFS,
+    error,
     isPending: results.some((result) => result.waiting),
     isFetchingNextPage,
     refresh,
