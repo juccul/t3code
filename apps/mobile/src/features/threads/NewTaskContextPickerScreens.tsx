@@ -261,11 +261,8 @@ export function NewTaskBranchPickerRouteScreen() {
               refName: branch.name,
             },
           });
-          if (!mountedRef.current || !navigation.isFocused()) {
-            return;
-          }
           if (result._tag === "Failure") {
-            if (!isAtomCommandInterrupted(result)) {
+            if (mountedRef.current && navigation.isFocused() && !isAtomCommandInterrupted(result)) {
               const error = squashAtomCommandFailure(result);
               Alert.alert(
                 "Could not switch branch",
@@ -282,10 +279,13 @@ export function NewTaskBranchPickerRouteScreen() {
           };
         }
 
+        // The checkout has already changed the repository. Persist the matching
+        // draft selection even if the native sheet was dismissed while the
+        // command was in flight; only visible-screen work is focus-gated below.
+        flow.selectBranch(selectedBranch);
         if (!mountedRef.current || !navigation.isFocused()) {
           return;
         }
-        flow.selectBranch(selectedBranch);
         flow.setBranchQuery("");
         allowSelectionNavigationRef.current = true;
         navigation.goBack();
