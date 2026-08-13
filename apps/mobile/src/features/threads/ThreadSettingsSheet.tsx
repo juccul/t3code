@@ -4,7 +4,8 @@ import type {
   ProviderOptionSelection,
   RuntimeMode,
 } from "@t3tools/contracts";
-import { LegendList, type LegendListRenderItemProps } from "@legendapp/list/react-native";
+import type { LegendListRenderItemProps } from "@legendapp/list/react-native";
+import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import {
   getProviderOptionCurrentLabel,
@@ -27,6 +28,7 @@ import {
   type ReactNode,
 } from "react";
 import { Platform, Pressable, ScrollView, Switch, TextInput, View } from "react-native";
+import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
@@ -76,6 +78,12 @@ const THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION = {
   data: false,
   size: true,
 } as const;
+const THREAD_SETTINGS_CATALOG_LAYOUT_TRANSITION = LinearTransition.duration(180);
+const THREAD_SETTINGS_CATALOG_ENTER_TRANSITION = FadeIn.duration(140);
+const THREAD_SETTINGS_CATALOG_EXIT_TRANSITION = FadeOut.duration(120);
+const THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION = LinearTransition.duration(180);
+const THREAD_SETTINGS_OPTION_ENTER_TRANSITION = FadeIn.duration(140);
+const THREAD_SETTINGS_OPTION_EXIT_TRANSITION = FadeOut.duration(100);
 const THREAD_SETTINGS_HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(
   Platform.OS,
   Platform.Version,
@@ -525,6 +533,14 @@ type ThreadSettingsCatalogItem =
       readonly option: ModelOption;
       readonly isFirst: boolean;
       readonly isLast: boolean;
+    }
+  | {
+      readonly kind: "empty";
+      readonly key: "empty";
+    }
+  | {
+      readonly kind: "options";
+      readonly key: "options";
     };
 
 function ThreadSettingsModelListRow(props: {
@@ -641,23 +657,8 @@ function useThreadSettingsCatalogItems(
   );
 }
 
-function renderThreadSettingsCatalogItem(
-  props: LegendListRenderItemProps<ThreadSettingsCatalogItem>,
-) {
-  if (props.item.kind === "provider") {
-    return <ThreadSettingsProviderListHeader provider={props.item.provider} />;
-  }
-
-  return (
-    <ThreadSettingsModelListRow
-      isFirst={props.item.isFirst}
-      isLast={props.item.isLast}
-      option={props.item.option}
-    />
-  );
-}
-
-function ThreadSettingsOptionsFooter(props: {
+function ThreadSettingsOptionsItem(props: {
+  readonly animationsReady: boolean;
   readonly onOpenSubmenu: (submenu: ThreadSettingsSubmenuPage) => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -670,34 +671,55 @@ function ThreadSettingsOptionsFooter(props: {
   return (
     <View style={{ paddingBottom: insets.bottom + bottomToolbarInset + 12 }}>
       <Text className="px-5 pb-2 pt-2 text-sm font-t3-medium text-foreground-muted">Options</Text>
-      <View className="mx-4 overflow-hidden rounded-2xl bg-card">
+      <Animated.View
+        className="mx-4 overflow-hidden rounded-2xl bg-card"
+        layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}
+      >
         {session.displayedDescriptors.map((descriptor) => {
           if (descriptor.type === "select") {
             return (
-              <DisclosureRow
+              <Animated.View
                 key={descriptor.id}
-                label={descriptor.label}
-                value={getProviderOptionCurrentLabel(descriptor)}
-                onPress={() => props.onOpenSubmenu({ kind: "descriptor", id: descriptor.id })}
-              />
+                entering={
+                  props.animationsReady ? THREAD_SETTINGS_OPTION_ENTER_TRANSITION : undefined
+                }
+                exiting={props.animationsReady ? THREAD_SETTINGS_OPTION_EXIT_TRANSITION : undefined}
+                layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}
+              >
+                <DisclosureRow
+                  label={descriptor.label}
+                  value={getProviderOptionCurrentLabel(descriptor)}
+                  onPress={() => props.onOpenSubmenu({ kind: "descriptor", id: descriptor.id })}
+                />
+              </Animated.View>
             );
           }
           return (
-            <SwitchRow
+            <Animated.View
               key={descriptor.id}
-              label={descriptor.label}
-              value={descriptor.currentValue ?? false}
-              onValueChange={(value) => session.applyOptionChange(descriptor.id, value)}
-            />
+              entering={props.animationsReady ? THREAD_SETTINGS_OPTION_ENTER_TRANSITION : undefined}
+              exiting={props.animationsReady ? THREAD_SETTINGS_OPTION_EXIT_TRANSITION : undefined}
+              layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}
+            >
+              <SwitchRow
+                label={descriptor.label}
+                value={descriptor.currentValue ?? false}
+                onValueChange={(value) => session.applyOptionChange(descriptor.id, value)}
+              />
+            </Animated.View>
           );
         })}
-        <DisclosureRow
-          isLast
-          label="Runtime"
-          value={RUNTIME_MODE_CHOICES.find((choice) => choice.mode === session.runtimeMode)?.label}
-          onPress={() => props.onOpenSubmenu({ kind: "runtime" })}
-        />
-      </View>
+        <Animated.View layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}>
+          <DisclosureRow
+            isLast
+            label="Runtime"
+            value={
+              RUNTIME_MODE_CHOICES.find((choice) => choice.mode === session.runtimeMode)?.label
+            }
+            onPress={() => props.onOpenSubmenu({ kind: "runtime" })}
+          />
+        </Animated.View>
+      </Animated.View>
 
       {Platform.OS !== "ios" && session.hasLegacyModels ? (
         <>
@@ -724,32 +746,78 @@ function ThreadSettingsMainContent(props: {
 }) {
   const session = useThreadSettingsSession();
   const catalogItems = useThreadSettingsCatalogItems(session);
+  const [animationsReady, setAnimationsReady] = useState(false);
   const nativeHeaderHeight = use(HeaderHeightContext) ?? 0;
   const hasActiveCatalogFilter =
     session.providerFilter !== null || session.searchQuery.trim().length > 0;
   const usesTransparentNativeHeader = Platform.OS === "ios" && NATIVE_LIQUID_GLASS_SUPPORTED;
+  const listItems = useMemo<ReadonlyArray<ThreadSettingsCatalogItem>>(
+    () => [
+      ...(catalogItems.length === 0 && hasActiveCatalogFilter
+        ? ([{ kind: "empty", key: "empty" }] as const)
+        : catalogItems),
+      { kind: "options", key: "options" },
+    ],
+    [catalogItems, hasActiveCatalogFilter],
+  );
+  const renderCatalogItem = useCallback(
+    (itemProps: LegendListRenderItemProps<ThreadSettingsCatalogItem>) => {
+      const item = itemProps.item;
+      let content: ReactNode;
+
+      if (item.kind === "provider") {
+        content = <ThreadSettingsProviderListHeader provider={item.provider} />;
+      } else if (item.kind === "model") {
+        content = (
+          <ThreadSettingsModelListRow
+            isFirst={item.isFirst}
+            isLast={item.isLast}
+            option={item.option}
+          />
+        );
+      } else if (item.kind === "empty") {
+        content = (
+          <View className="items-center px-8 py-14">
+            <Text className="text-center text-sm text-foreground-muted">No matching models</Text>
+          </View>
+        );
+      } else {
+        content = (
+          <ThreadSettingsOptionsItem
+            animationsReady={animationsReady}
+            onOpenSubmenu={props.onOpenSubmenu}
+          />
+        );
+      }
+
+      return (
+        <Animated.View
+          key={item.key}
+          entering={animationsReady ? THREAD_SETTINGS_CATALOG_ENTER_TRANSITION : undefined}
+          exiting={animationsReady ? THREAD_SETTINGS_CATALOG_EXIT_TRANSITION : undefined}
+        >
+          {content}
+        </Animated.View>
+      );
+    },
+    [animationsReady, props.onOpenSubmenu],
+  );
 
   return (
-    <LegendList
+    <AnimatedLegendList
       automaticallyAdjustsScrollIndicatorInsets
       className="flex-1 bg-sheet"
       contentContainerStyle={{ paddingTop: 4 }}
       contentInsetAdjustmentBehavior={usesTransparentNativeHeader ? "never" : "automatic"}
-      data={catalogItems}
+      data={listItems}
       estimatedItemSize={48}
+      extraData={animationsReady}
       getItemType={(item) => item.kind}
+      itemLayoutAnimation={THREAD_SETTINGS_CATALOG_LAYOUT_TRANSITION}
       keyExtractor={(item) => item.key}
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
       maintainVisibleContentPosition={THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION}
-      ListEmptyComponent={
-        hasActiveCatalogFilter ? (
-          <View className="items-center px-8 py-14">
-            <Text className="text-center text-sm text-foreground-muted">No matching models</Text>
-          </View>
-        ) : null
-      }
-      ListFooterComponent={<ThreadSettingsOptionsFooter onOpenSubmenu={props.onOpenSubmenu} />}
       ListHeaderComponent={
         <>
           {usesTransparentNativeHeader ? <View style={{ height: nativeHeaderHeight }} /> : null}
@@ -770,7 +838,8 @@ function ThreadSettingsMainContent(props: {
         </>
       }
       recycleItems
-      renderItem={renderThreadSettingsCatalogItem}
+      onLoad={() => setAnimationsReady(true)}
+      renderItem={renderCatalogItem}
       showsVerticalScrollIndicator={false}
     />
   );
