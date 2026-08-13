@@ -1,10 +1,56 @@
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
+import { vi } from "vite-plus/test";
+
+const composerDraftFileMocks = vi.hoisted(() => {
+  let document = "";
+  let releaseRead: (() => void) | null = null;
+  let readBarrier = Promise.resolve();
+
+  return {
+    blockRead() {
+      readBarrier = new Promise<void>((resolve) => {
+        releaseRead = resolve;
+      });
+    },
+    releaseRead() {
+      releaseRead?.();
+      releaseRead = null;
+    },
+    setDocument(value: unknown) {
+      document = JSON.stringify(value);
+    },
+    Directory: class {
+      create() {}
+    },
+    File: class {
+      exists = true;
+
+      create() {}
+
+      async text() {
+        await readBarrier;
+        return document;
+      }
+
+      write(value: string) {
+        document = value;
+      }
+    },
+  };
+});
+
+vi.mock("expo-file-system", () => ({
+  Directory: composerDraftFileMocks.Directory,
+  File: composerDraftFileMocks.File,
+  Paths: { document: "/documents" },
+}));
 
 import { appAtomRegistry } from "./atom-registry";
 import {
   clearComposerDraftContentState,
   composerDraftsAtom,
+  copyComposerDraftContentIfEmpty,
   copyComposerDraftContentState,
   decodePersistedComposerDrafts,
   type ComposerDraft,
@@ -314,6 +360,37 @@ describe("mobile composer drafts", () => {
     ).toEqual({
       [`${retainedEnvironmentId}:thread-local`]: DRAFT,
       [`new-task:${retainedEnvironmentId}:project-local`]: DRAFT,
+    });
+  });
+
+  it("waits for persisted drafts before copying content between projects", async () => {
+    const sourceKey = "new-task:environment-1:project-1";
+    const targetKey = "new-task:environment-1:project-2";
+    const unrelatedKey = "environment-1:thread-1";
+    const source = { text: "Current task", attachments: [] } satisfies ComposerDraft;
+    const target = { text: "Persisted target", attachments: [] } satisfies ComposerDraft;
+    const unrelated = { text: "Keep me", attachments: [] } satisfies ComposerDraft;
+
+    composerDraftFileMocks.setDocument({
+      schemaVersion: 1,
+      drafts: {
+        [targetKey]: target,
+        [unrelatedKey]: unrelated,
+      },
+    });
+    composerDraftFileMocks.blockRead();
+    appAtomRegistry.set(composerDraftsAtom, { [sourceKey]: source });
+
+    const copy = copyComposerDraftContentIfEmpty(sourceKey, targetKey);
+    expect(appAtomRegistry.get(composerDraftsAtom)).toEqual({ [sourceKey]: source });
+
+    composerDraftFileMocks.releaseRead();
+    await copy;
+
+    expect(appAtomRegistry.get(composerDraftsAtom)).toEqual({
+      [sourceKey]: source,
+      [targetKey]: target,
+      [unrelatedKey]: unrelated,
     });
   });
 });

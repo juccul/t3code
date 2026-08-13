@@ -75,7 +75,8 @@ import {
   type HomeProjectScope,
 } from "../home/homeThreadList";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
-import { useLegacyPlanModeEnabled } from "./use-legacy-plan-mode-enabled";
+import { resolvePendingTaskInteractionMode } from "./legacy-plan-mode";
+import { useLegacyPlanModeState } from "./use-legacy-plan-mode-enabled";
 import {
   resolveNewTaskBranchWorktreePath,
   resolveNewTaskLocalWorkspaceSelection,
@@ -190,7 +191,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const threads = useThreadShells();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const groupingSettings = useMobileProjectGroupingSettings();
-  const planModeEnabled = useLegacyPlanModeEnabled();
+  const { enabled: planModeEnabled, loaded: planModePreferenceLoaded } = useLegacyPlanModeState();
   const projectScopes = useMemo(
     () =>
       sortHomeProjectScopes({
@@ -566,7 +567,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         selectedProjectDraftKey?.startsWith("new-task:") &&
         selectedProjectDraftKey !== nextDraftKey
       ) {
-        copyComposerDraftContentIfEmpty(selectedProjectDraftKey, nextDraftKey);
+        void copyComposerDraftContentIfEmpty(selectedProjectDraftKey, nextDraftKey);
       }
       setSelectedEnvironmentId(project.environmentId);
       setSelectedProjectKey(nextProjectKey);
@@ -839,9 +840,12 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         attachments: draft.attachments,
         modelSelection: draftModelSelection,
         runtimeMode: draft.runtimeMode ?? DEFAULT_RUNTIME_MODE,
-        interactionMode: planModeEnabled
-          ? (draft.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE)
-          : DEFAULT_PROVIDER_INTERACTION_MODE,
+        interactionMode: resolvePendingTaskInteractionMode({
+          preferenceLoaded: planModePreferenceLoaded,
+          planModeEnabled,
+          draftInteractionMode: draft.interactionMode,
+          queuedInteractionMode: editingPendingTask?.interactionMode,
+        }),
         creation: {
           projectId: selectedProject.id,
           ...(projectTitle !== undefined ? { projectTitle } : {}),
@@ -867,6 +871,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       selectedProject,
       selectedProjectDraftKey,
       planModeEnabled,
+      planModePreferenceLoaded,
       startFromOrigin,
       workspaceMode,
     ],

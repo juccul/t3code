@@ -448,10 +448,14 @@ export function copyComposerDraftContentState(
   };
 }
 
-export function copyComposerDraftContentIfEmpty(
+export async function copyComposerDraftContentIfEmpty(
   sourceDraftKey: string,
   targetDraftKey: string,
-): void {
+): Promise<void> {
+  ensureComposerDraftsLoaded();
+  if (loadPromise !== null) {
+    await loadPromise;
+  }
   updateComposerDrafts((current) =>
     copyComposerDraftContentState(current, sourceDraftKey, targetDraftKey),
   );

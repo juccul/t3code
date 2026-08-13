@@ -38,6 +38,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
+import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { cn } from "../../lib/cn";
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
@@ -854,6 +855,10 @@ function ThreadSettingsModelsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
   const usesNativeMailSearchToolbar = Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED;
   const hasCustomCatalogFilter = session.providerFilter !== null || session.showLegacy;
+  const commitAndClose = useCallback(() => {
+    session.commitPendingModel();
+    presentation.onClose();
+  }, [presentation, session]);
   const filterMenu = useMemo(
     () => ({
       title: "Model filters",
@@ -894,6 +899,19 @@ function ThreadSettingsModelsScreen() {
 
   return (
     <>
+      {Platform.OS === "android" ? (
+        <AndroidSheetHeader
+          actions={[
+            {
+              accessibilityLabel: session.pendingModel ? "Save thread settings" : "Done",
+              icon: "checkmark",
+              onPress: commitAndClose,
+            },
+          ]}
+          onBack={presentation.onClose}
+          title="Thread settings"
+        />
+      ) : null}
       <NativeStackScreenOptions
         optionsVersion={[
           session.providerFilter,
@@ -916,6 +934,7 @@ function ThreadSettingsModelsScreen() {
                 }),
               ]
             : undefined,
+          headerShown: Platform.OS !== "android",
           headerSearchBarOptions:
             Platform.OS === "ios" && !usesNativeMailSearchToolbar
               ? {
@@ -951,10 +970,7 @@ function ThreadSettingsModelsScreen() {
         <NativeHeaderToolbar.Button
           accessibilityLabel={session.pendingModel ? "Save thread settings" : "Done"}
           label={session.pendingModel ? "Save" : "Done"}
-          onPress={() => {
-            session.commitPendingModel();
-            presentation.onClose();
-          }}
+          onPress={commitAndClose}
         />
       </NativeHeaderToolbar>
       {Platform.OS === "ios" && !usesNativeMailSearchToolbar ? (
@@ -1007,7 +1023,13 @@ function ThreadSettingsChoiceScreen() {
   const route = useRoute<RouteProp<ThreadSettingsPickerStackParams, "ThreadSettingsChoice">>();
 
   return (
-    <ThreadSettingsChoiceContent submenu={route.params} onSelected={() => navigation.goBack()} />
+    <>
+      <NativeStackScreenOptions options={{ headerShown: Platform.OS !== "android" }} />
+      {Platform.OS === "android" ? (
+        <AndroidSheetHeader title={route.params.title} onBack={() => navigation.goBack()} />
+      ) : null}
+      <ThreadSettingsChoiceContent submenu={route.params} onSelected={() => navigation.goBack()} />
+    </>
   );
 }
 

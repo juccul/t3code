@@ -5,7 +5,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import * as Haptics from "expo-haptics";
 import { useNavigation } from "@react-navigation/native";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -204,6 +204,9 @@ export function NewTaskBranchPickerRouteScreen() {
   const fontFamily = useFontFamily("regular");
   const switchRef = useAtomCommand(vcsEnvironment.switchRef, { reportFailure: false });
   const [switchingBranchName, setSwitchingBranchName] = useState<string | null>(null);
+  const selectingBranchNameRef = useRef<string | null>(null);
+  const allowSelectionNavigationRef = useRef(false);
+  const mountedRef = useRef(true);
   const screenTitle = flow.workspaceMode === "worktree" ? "Base branch" : "Branch";
   const usesNativeMailSearchToolbar = Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED;
   const selectedBranchName =
@@ -212,57 +215,83 @@ export function NewTaskBranchPickerRouteScreen() {
     flow.availableBranches.find((branch) => branch.isDefault)?.name ??
     null;
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
       flow.setBranchQuery("");
-    },
-    [flow.setBranchQuery],
+    };
+  }, [flow.setBranchQuery]);
+
+  useEffect(
+    () =>
+      navigation.addListener("beforeRemove", (event) => {
+        if (selectingBranchNameRef.current !== null && !allowSelectionNavigationRef.current) {
+          event.preventDefault();
+        }
+      }),
+    [navigation],
   );
 
   const selectBranch = useCallback(
     async (branch: VcsRef) => {
-      if (switchingBranchName !== null) {
+      if (selectingBranchNameRef.current !== null) {
         return;
       }
+      selectingBranchNameRef.current = branch.name;
       void Haptics.selectionAsync();
 
-      let selectedBranch = branch;
-      const needsCheckout = shouldCheckoutNewTaskBranch({
-        branchIsCurrent: branch.current,
-        branchWorktreePath: branch.worktreePath,
-        workspaceMode: flow.workspaceMode,
-      });
-      if (needsCheckout && flow.selectedProject) {
-        setSwitchingBranchName(branch.name);
-        const result = await switchRef({
-          environmentId: flow.selectedProject.environmentId,
-          input: {
-            cwd: flow.selectedProject.workspaceRoot,
-            refName: branch.name,
-          },
+      try {
+        let selectedBranch = branch;
+        const needsCheckout = shouldCheckoutNewTaskBranch({
+          branchIsCurrent: branch.current,
+          branchWorktreePath: branch.worktreePath,
+          workspaceMode: flow.workspaceMode,
         });
-        setSwitchingBranchName(null);
-        if (result._tag === "Failure") {
-          if (!isAtomCommandInterrupted(result)) {
-            const error = squashAtomCommandFailure(result);
-            Alert.alert(
-              "Could not switch branch",
-              error instanceof Error ? error.message : "The branch could not be checked out.",
-            );
+        if (needsCheckout && flow.selectedProject) {
+          setSwitchingBranchName(branch.name);
+          const result = await switchRef({
+            environmentId: flow.selectedProject.environmentId,
+            input: {
+              cwd: flow.selectedProject.workspaceRoot,
+              refName: branch.name,
+            },
+          });
+          if (!mountedRef.current || !navigation.isFocused()) {
+            return;
           }
+          if (result._tag === "Failure") {
+            if (!isAtomCommandInterrupted(result)) {
+              const error = squashAtomCommandFailure(result);
+              Alert.alert(
+                "Could not switch branch",
+                error instanceof Error ? error.message : "The branch could not be checked out.",
+              );
+            }
+            return;
+          }
+          selectedBranch = {
+            ...branch,
+            current: true,
+            isRemote: false,
+            name: result.value.refName ?? branch.name,
+          };
+        }
+
+        if (!mountedRef.current || !navigation.isFocused()) {
           return;
         }
-        selectedBranch = {
-          ...branch,
-          current: true,
-          isRemote: false,
-          name: result.value.refName ?? branch.name,
-        };
+        flow.selectBranch(selectedBranch);
+        flow.setBranchQuery("");
+        allowSelectionNavigationRef.current = true;
+        navigation.goBack();
+      } finally {
+        selectingBranchNameRef.current = null;
+        allowSelectionNavigationRef.current = false;
+        if (mountedRef.current) {
+          setSwitchingBranchName(null);
+        }
       }
-
-      flow.selectBranch(selectedBranch);
-      flow.setBranchQuery("");
-      navigation.goBack();
     },
     [
       flow.selectBranch,
@@ -271,7 +300,6 @@ export function NewTaskBranchPickerRouteScreen() {
       flow.workspaceMode,
       navigation,
       switchRef,
-      switchingBranchName,
     ],
   );
 

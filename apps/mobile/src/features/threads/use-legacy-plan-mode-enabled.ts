@@ -10,10 +10,17 @@ import { resolveLegacyPlanModeEnabled } from "./legacy-plan-mode";
  * explicitly enabled.
  */
 export function useLegacyPlanModeEnabled(): boolean {
+  return useLegacyPlanModeState().enabled;
+}
+
+export function useLegacyPlanModeState(): { readonly enabled: boolean; readonly loaded: boolean } {
   const preferences = useAtomValue(mobilePreferencesAtom);
   const loaded = AsyncResult.isSuccess(preferences);
-  return resolveLegacyPlanModeEnabled({
+  return {
+    enabled: resolveLegacyPlanModeEnabled({
+      loaded,
+      preference: loaded ? preferences.value.planModeEnabled : undefined,
+    }),
     loaded,
-    preference: loaded ? preferences.value.planModeEnabled : undefined,
-  });
+  };
 }
