@@ -75,6 +75,7 @@ import {
  * provider headers remain user-collapsible.
  */
 const PRIMARY_PROVIDER_DRIVERS: ReadonlySet<string> = new Set(["claudeAgent", "codex"]);
+const THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION = { minIndexForVisible: 0 } as const;
 const THREAD_SETTINGS_HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(
   Platform.OS,
   Platform.Version,
@@ -704,15 +705,30 @@ function ThreadSettingsMainContent(props: {
   const session = useThreadSettingsSession();
   const sections = useThreadSettingsModelSections(session);
   const listRef = useRef<SectionList<ModelOption, ThreadSettingsModelSection>>(null);
+  const previousCatalogFilterRef = useRef({
+    providerFilter: session.providerFilter,
+    searchQuery: session.searchQuery,
+  });
   const hasActiveCatalogFilter =
     session.providerFilter !== null || session.searchQuery.trim().length > 0;
 
   useEffect(() => {
+    const previous = previousCatalogFilterRef.current;
+    if (
+      previous.providerFilter === session.providerFilter &&
+      previous.searchQuery === session.searchQuery
+    ) {
+      return;
+    }
+    previousCatalogFilterRef.current = {
+      providerFilter: session.providerFilter,
+      searchQuery: session.searchQuery,
+    };
     const frame = requestAnimationFrame(() => {
       listRef.current?.getScrollResponder()?.scrollTo({ animated: false, y: 0 });
     });
     return () => cancelAnimationFrame(frame);
-  }, [session.providerFilter, session.searchQuery, session.showLegacy]);
+  }, [session.providerFilter, session.searchQuery]);
 
   return (
     <SectionList
@@ -722,6 +738,7 @@ function ThreadSettingsMainContent(props: {
       contentContainerStyle={{ paddingTop: 4 }}
       contentInsetAdjustmentBehavior="automatic"
       keyExtractor={(option) => option.key}
+      maintainVisibleContentPosition={THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION}
       ListEmptyComponent={
         hasActiveCatalogFilter ? (
           <View className="items-center px-8 py-14">
