@@ -4,6 +4,8 @@ import type {
   ProviderOptionSelection,
   RuntimeMode,
 } from "@t3tools/contracts";
+import { LegendList, type LegendListRenderItemProps } from "@legendapp/list/react-native";
+import { HeaderHeightContext } from "@react-navigation/elements";
 import {
   getProviderOptionCurrentLabel,
   getProviderOptionCurrentValue,
@@ -21,19 +23,10 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
-import {
-  Platform,
-  Pressable,
-  ScrollView,
-  SectionList,
-  Switch,
-  TextInput,
-  View,
-} from "react-native";
+import { Platform, Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
@@ -75,7 +68,10 @@ import {
  * provider headers remain user-collapsible.
  */
 const PRIMARY_PROVIDER_DRIVERS: ReadonlySet<string> = new Set(["claudeAgent", "codex"]);
-const THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION = { minIndexForVisible: 0 } as const;
+const THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION = {
+  data: true,
+  size: true,
+} as const;
 const THREAD_SETTINGS_HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(
   Platform.OS,
   Platform.Version,
@@ -127,11 +123,7 @@ function ModelRow(props: {
   );
 }
 
-/**
- * Provider section header with the harness logo. Secondary providers render
- * as a tappable fold (count + chevron while collapsed); primary providers
- * and the group holding the current selection are static headers.
- */
+/** Provider catalog header with its harness logo and disclosure state. */
 function ProviderHeader(props: {
   readonly driver: string | undefined;
   readonly label: string;
@@ -507,15 +499,29 @@ function useThreadSettingsSession() {
   return value;
 }
 
-type ThreadSettingsModelSection = {
+type ThreadSettingsProviderCatalog = {
   readonly key: string;
   readonly driver: string | undefined;
   readonly label: string;
   readonly collapsible: boolean;
   readonly collapsed: boolean;
   readonly modelCount: number;
-  readonly data: ReadonlyArray<ModelOption>;
+  readonly models: ReadonlyArray<ModelOption>;
 };
+
+type ThreadSettingsCatalogItem =
+  | {
+      readonly kind: "provider";
+      readonly key: string;
+      readonly provider: ThreadSettingsProviderCatalog;
+    }
+  | {
+      readonly kind: "model";
+      readonly key: string;
+      readonly option: ModelOption;
+      readonly isFirst: boolean;
+      readonly isLast: boolean;
+    };
 
 function ThreadSettingsModelListRow(props: {
   readonly option: ModelOption;
@@ -539,48 +545,30 @@ function ThreadSettingsModelListRow(props: {
   );
 }
 
-function ThreadSettingsProviderListHeader(props: { readonly section: ThreadSettingsModelSection }) {
+function ThreadSettingsProviderListHeader(props: {
+  readonly provider: ThreadSettingsProviderCatalog;
+}) {
   const session = useThreadSettingsSession();
   const onToggle = useCallback(
-    () => session.toggleProvider(props.section.key),
-    [props.section.key, session.toggleProvider],
+    () => session.toggleProvider(props.provider.key),
+    [props.provider.key, session.toggleProvider],
   );
 
   return (
     <ProviderHeader
-      collapsible={props.section.collapsible}
-      collapsed={props.section.collapsed}
-      driver={props.section.driver}
-      label={props.section.label}
-      modelCount={props.section.modelCount}
+      collapsible={props.provider.collapsible}
+      collapsed={props.provider.collapsed}
+      driver={props.provider.driver}
+      label={props.provider.label}
+      modelCount={props.provider.modelCount}
       onToggle={onToggle}
     />
   );
 }
 
-function renderThreadSettingsModelItem(props: {
-  readonly item: ModelOption;
-  readonly index: number;
-  readonly section: ThreadSettingsModelSection;
-}) {
-  return (
-    <ThreadSettingsModelListRow
-      isFirst={props.index === 0}
-      isLast={props.index === props.section.data.length - 1}
-      option={props.item}
-    />
-  );
-}
-
-function renderThreadSettingsProviderHeader(props: {
-  readonly section: ThreadSettingsModelSection;
-}) {
-  return <ThreadSettingsProviderListHeader section={props.section} />;
-}
-
-function useThreadSettingsModelSections(
+function useThreadSettingsCatalogItems(
   session: ThreadSettingsSessionValue,
-): ReadonlyArray<ThreadSettingsModelSection> {
+): ReadonlyArray<ThreadSettingsCatalogItem> {
   return useMemo(
     () =>
       session.providerGroups.flatMap((group) => {
@@ -613,16 +601,28 @@ function useThreadSettingsModelSections(
           hasExpansionOverride: session.providerExpansionOverrides.has(group.providerKey),
           isNarrowed,
         });
+        const provider: ThreadSettingsProviderCatalog = {
+          key: group.providerKey,
+          driver,
+          label: group.providerLabel,
+          collapsible,
+          collapsed,
+          modelCount: visibleModels.length,
+          models: collapsed ? [] : visibleModels,
+        };
         return [
           {
-            key: group.providerKey,
-            driver,
-            label: group.providerLabel,
-            collapsible,
-            collapsed,
-            modelCount: visibleModels.length,
-            data: collapsed ? [] : visibleModels,
+            kind: "provider" as const,
+            key: `provider:${group.providerKey}`,
+            provider,
           },
+          ...provider.models.map((option, index) => ({
+            kind: "model" as const,
+            key: `model:${option.key}`,
+            option,
+            isFirst: index === 0,
+            isLast: index === provider.models.length - 1,
+          })),
         ];
       }),
     [
@@ -634,6 +634,22 @@ function useThreadSettingsModelSections(
       session.searchQuery,
       session.showLegacy,
     ],
+  );
+}
+
+function renderThreadSettingsCatalogItem(
+  props: LegendListRenderItemProps<ThreadSettingsCatalogItem>,
+) {
+  if (props.item.kind === "provider") {
+    return <ThreadSettingsProviderListHeader provider={props.item.provider} />;
+  }
+
+  return (
+    <ThreadSettingsModelListRow
+      isFirst={props.item.isFirst}
+      isLast={props.item.isLast}
+      option={props.item.option}
+    />
   );
 }
 
@@ -703,41 +719,26 @@ function ThreadSettingsMainContent(props: {
   readonly onOpenSubmenu: (submenu: ThreadSettingsSubmenuPage) => void;
 }) {
   const session = useThreadSettingsSession();
-  const sections = useThreadSettingsModelSections(session);
-  const listRef = useRef<SectionList<ModelOption, ThreadSettingsModelSection>>(null);
-  const previousCatalogFilterRef = useRef({
-    providerFilter: session.providerFilter,
-    searchQuery: session.searchQuery,
-  });
+  const catalogItems = useThreadSettingsCatalogItems(session);
+  const nativeHeaderHeight = use(HeaderHeightContext) ?? 0;
   const hasActiveCatalogFilter =
     session.providerFilter !== null || session.searchQuery.trim().length > 0;
-
-  useEffect(() => {
-    const previous = previousCatalogFilterRef.current;
-    if (
-      previous.providerFilter === session.providerFilter &&
-      previous.searchQuery === session.searchQuery
-    ) {
-      return;
-    }
-    previousCatalogFilterRef.current = {
-      providerFilter: session.providerFilter,
-      searchQuery: session.searchQuery,
-    };
-    const frame = requestAnimationFrame(() => {
-      listRef.current?.getScrollResponder()?.scrollTo({ animated: false, y: 0 });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [session.providerFilter, session.searchQuery]);
+  const usesTransparentNativeHeader = Platform.OS === "ios" && NATIVE_LIQUID_GLASS_SUPPORTED;
 
   return (
-    <SectionList
-      ref={listRef}
+    <LegendList
       automaticallyAdjustsScrollIndicatorInsets
       className="flex-1 bg-sheet"
       contentContainerStyle={{ paddingTop: 4 }}
       contentInsetAdjustmentBehavior="automatic"
-      keyExtractor={(option) => option.key}
+      contentInsetStartAdjustment={usesTransparentNativeHeader ? nativeHeaderHeight : 0}
+      data={catalogItems}
+      estimatedItemSize={48}
+      getItemType={(item) => item.kind}
+      initialScrollOffset={usesTransparentNativeHeader ? -nativeHeaderHeight : undefined}
+      keyExtractor={(item) => item.key}
+      keyboardDismissMode="on-drag"
+      keyboardShouldPersistTaps="handled"
       maintainVisibleContentPosition={THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION}
       ListEmptyComponent={
         hasActiveCatalogFilter ? (
@@ -763,11 +764,9 @@ function ThreadSettingsMainContent(props: {
           </View>
         ) : null
       }
-      renderItem={renderThreadSettingsModelItem}
-      renderSectionHeader={renderThreadSettingsProviderHeader}
-      sections={sections}
+      recycleItems
+      renderItem={renderThreadSettingsCatalogItem}
       showsVerticalScrollIndicator={false}
-      stickySectionHeadersEnabled={false}
     />
   );
 }
