@@ -68,8 +68,12 @@ import {
  * provider headers remain user-collapsible.
  */
 const PRIMARY_PROVIDER_DRIVERS: ReadonlySet<string> = new Set(["claudeAgent", "codex"]);
+/**
+ * Keep measured row changes stable, but let catalog mutations use the list's
+ * native bounds so a filtered catalog that underflows returns to the top.
+ */
 const THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION = {
-  data: true,
+  data: false,
   size: true,
 } as const;
 const THREAD_SETTINGS_HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(
@@ -730,12 +734,10 @@ function ThreadSettingsMainContent(props: {
       automaticallyAdjustsScrollIndicatorInsets
       className="flex-1 bg-sheet"
       contentContainerStyle={{ paddingTop: 4 }}
-      contentInsetAdjustmentBehavior="automatic"
-      contentInsetStartAdjustment={usesTransparentNativeHeader ? nativeHeaderHeight : 0}
+      contentInsetAdjustmentBehavior={usesTransparentNativeHeader ? "never" : "automatic"}
       data={catalogItems}
       estimatedItemSize={48}
       getItemType={(item) => item.kind}
-      initialScrollOffset={usesTransparentNativeHeader ? -nativeHeaderHeight : undefined}
       keyExtractor={(item) => item.key}
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
@@ -749,20 +751,23 @@ function ThreadSettingsMainContent(props: {
       }
       ListFooterComponent={<ThreadSettingsOptionsFooter onOpenSubmenu={props.onOpenSubmenu} />}
       ListHeaderComponent={
-        Platform.OS === "android" ? (
-          <View className="px-4 pb-2 pt-3">
-            <TextInput
-              accessibilityLabel="Find a model"
-              autoCapitalize="none"
-              autoCorrect={false}
-              className="h-11 rounded-xl bg-card px-4 text-base text-foreground"
-              onChangeText={session.setSearchQuery}
-              placeholder="Find a model"
-              placeholderTextColorClassName="accent-placeholder"
-              value={session.searchQuery}
-            />
-          </View>
-        ) : null
+        <>
+          {usesTransparentNativeHeader ? <View style={{ height: nativeHeaderHeight }} /> : null}
+          {Platform.OS === "android" ? (
+            <View className="px-4 pb-2 pt-3">
+              <TextInput
+                accessibilityLabel="Find a model"
+                autoCapitalize="none"
+                autoCorrect={false}
+                className="h-11 rounded-xl bg-card px-4 text-base text-foreground"
+                onChangeText={session.setSearchQuery}
+                placeholder="Find a model"
+                placeholderTextColorClassName="accent-placeholder"
+                value={session.searchQuery}
+              />
+            </View>
+          ) : null}
+        </>
       }
       recycleItems
       renderItem={renderThreadSettingsCatalogItem}
